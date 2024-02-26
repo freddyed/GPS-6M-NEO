@@ -1,0 +1,122 @@
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
+
+static const int RXPin = 10, TXPin = 11;
+static const uint32_t GPSBaud = 9600;
+
+// The TinyGPS++ object
+TinyGPSPlus gps;
+
+// The serial connection to the GPS device
+SoftwareSerial ss(RXPin, TXPin);
+
+int TimeZoneHour = 5; //Zona horaria Peru(diferencia horaria Londres GMT-Peru)
+int DaysInMonth[12]={31,28,31,30,31,30,31,31,30,31,30,31}; //Declaramos la cantidad de dias en cada mes del año
+
+unsigned long nextTime = 0, ActualSendTime = 0,SendTime = 1000;
+
+char latitud[12];
+char longitud[12];
+
+void setup()
+{
+
+  Serial.begin(9600);
+  ss.begin(GPSBaud);
+  Serial.println(F("       TimeStamp      Latitud   Longitud "));
+  Serial.println(F("---------------------------------------------"));
+}
+
+void loop()
+{
+  
+  if(millis() > ActualSendTime + SendTime){
+    ActualSendTime = millis(); 
+  smartDelay();
+  printDateTime(gps.date, gps.time);
+  printlatlon(gps.location.lat(), 6);
+  printlatlon(gps.location.lng(), 6);
+  }
+  Serial.println();
+  delay(500);
+
+}
+
+static void smartDelay()  //esta funcion "alimenta" al GPS para que funcione, como el activador
+{
+  bool start = false;
+  do 
+  {
+    while (ss.available() > 0)
+      if(gps.encode(ss.read()))
+        start = true;
+  } while (start == false);
+  
+  if (millis() > 5000 && gps.charsProcessed() < 10){
+    Serial.println(F("No GPS data received: check wiring"));
+     }
+}
+
+static void printlatlon(float val, int prec)
+{
+
+  if (!gps.location.isValid())
+  {
+    Serial.print("*********"); //Aqui escribimos el coodigo que queremos enviar si hay error de lectura
+    Serial.print(' ');
+   
+  }
+  else
+  {
+    Serial.print(val, prec);
+    Serial.print(' ');
+    dtostrf (val, 10, 6, latitud); //podemos usar esta opcion o usar String(valor) 
+    //val = val*1000000;
+    //ltoa(val, vol, 10);
+    //sprintf(vol,"%s", vol);
+    Serial.print(latitud);
+    //delay(100);
+  }
+}
+
+
+static void printDateTime(TinyGPSDate &d, TinyGPSTime &t)
+{
+  byte second=t.second();
+  byte minute=t.minute();
+  byte hour=t.hour();
+  byte day=d.day();
+  byte month=d.month();
+  int year=d.year();
+  if (!d.isValid() && !t.isValid() )
+  {
+    Serial.print(F("********** ******** ")); //Aqui escribimos el coodigo que queremos enviar si hay error de lectura
+  }
+  else
+  {
+     //Agregando correccion al horario 
+    if(hour >= TimeZoneHour) {
+       hour = hour - TimeZoneHour ;
+     } else {
+       // Correct for period when London is a day ahead
+       hour = (hour + 24) - TimeZoneHour ;
+       day  = day - 1 ;
+       if( day == 0)
+       {
+         day   = DaysInMonth[ month - 1] ;  // 0 - 11
+         month = month - 1 ;  // January in London still December Westward
+         if( month == 0)           // GPS months are 01 through 12
+         {
+           month = 12 ;
+           day   = DaysInMonth[ 11 ] ;  // ultimo dia de diciembre
+         }
+        // En el caso del mes de febrero para años bisciestos
+         if( month == 2 && (year % 4)==0 ) day = day + 1 ;
+       }
+     }
+  //Finalizando codigo agregado  
+    char sz[32] = "";
+    sprintf(sz, "%02d-%02d-%02dT%02d:%02d:%02dZ ", year, month, day, hour, minute, second);//2020-08-28T17:13:40Z
+    Serial.print(sz);
+  }
+}
